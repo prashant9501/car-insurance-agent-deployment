@@ -96,14 +96,28 @@ VEHICLE_CATALOG = {
 
 
 def lookup_vehicle(query: str) -> dict | None:
-    """Fuzzy lookup by model name."""
-    q = query.lower().strip()
-    # Direct match
-    if q in VEHICLE_CATALOG:
-        return VEHICLE_CATALOG[q]
-    # Substring match
+    """Find a vehicle by model name, with or without the brand.
+
+    Handles "Swift", "swift", "cret", "Maruti Swift", "Hyundai Creta",
+    "Swift Dzire" and "Mahindra XUV 700". Returns None if nothing matches.
+    """
+    normalized_query = query.lower().strip()
+
+    # 1. Exact catalog key ("swift")
+    if normalized_query in VEHICLE_CATALOG:
+        return VEHICLE_CATALOG[normalized_query]
+
+    # 2. The query is part of a model name ("cret" → Creta, "innova" → Innova Crysta)
     for key, vehicle in VEHICLE_CATALOG.items():
-        if q in key or q in vehicle["model"].lower():
+        if normalized_query in key or normalized_query in vehicle["model"].lower():
+            return vehicle
+
+    # 3. A model name appears inside the query, e.g. with the brand in front
+    #    ("Hyundai Creta", "Maruti Swift VXI", "XUV 700"). Spaces and hyphens
+    #    are removed so "XUV 700" and "Wagon-R" still match.
+    compact_query = normalized_query.replace(" ", "").replace("-", "")
+    for key, vehicle in VEHICLE_CATALOG.items():
+        if key in compact_query:
             return vehicle
     return None
 

@@ -1,6 +1,6 @@
 """Tools used by the Claims Agent.
 
-Includes the showcase tool: GPT-4o Vision-based damage analysis.
+Includes the showcase tool: vision-based damage analysis (the model reads the photo).
 """
 import base64
 import json
@@ -8,8 +8,9 @@ import secrets
 from datetime import date
 
 from langchain_core.tools import tool
-from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
+
+from app.llm import get_chat_model
 
 
 class PolicyVerifyInput(BaseModel):
@@ -53,7 +54,7 @@ class DamageAnalysisInput(BaseModel):
 
 @tool("analyze_damage_image", args_schema=DamageAnalysisInput)
 def analyze_damage_image_tool(image_b64: str, incident_description: str = "") -> dict:
-    """Analyze a damage photo using GPT-4o Vision and classify severity.
+    """Analyze a damage photo with the vision-capable chat model and classify severity.
 
     Returns affected parts, severity per part, and overall severity rating.
     This is the showcase multimodal tool — uses real vision AI.
@@ -65,7 +66,7 @@ def analyze_damage_image_tool(image_b64: str, incident_description: str = "") ->
     if image_b64.startswith("data:"):
         image_b64 = image_b64.split(",", 1)[-1]
 
-    vision_llm = ChatOpenAI(model="gpt-4o", temperature=0)
+    vision_llm = get_chat_model()
 
     prompt = f"""You are a motor insurance damage assessor. Analyze this car damage photo
 and respond ONLY with valid JSON (no markdown fences, no extra text).
@@ -102,7 +103,7 @@ Cost guidance:
                 },
             ],
         }])
-        content = response.content.strip()
+        content = response.text.strip()
         # Remove possible code fences
         if content.startswith("```"):
             content = content.split("```")[1]

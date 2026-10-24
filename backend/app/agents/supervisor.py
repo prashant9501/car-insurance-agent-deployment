@@ -1,12 +1,13 @@
 """Supervisor — top-level router.
 
 Classifies user intent and decides which specialist agent should respond.
-Uses a fast, cheap model (gpt-4o-mini) since this is a classification task.
+Uses the shared chat model (app.llm) with reasoning turned off, which is fast
+and cheap enough for a classification task.
 """
 import json
-from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, AIMessage
 
+from app.llm import get_chat_model
 from app.workflows.state import AgentState
 
 
@@ -37,7 +38,7 @@ If the user's request is unclear or doesn't fit, default to "policy_qa".
 
 def supervisor_node(state: AgentState) -> dict:
     """Classify user intent and set the next_agent for routing."""
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    llm = get_chat_model()
 
     # Get the latest user message
     user_messages = [m for m in state["messages"] if getattr(m, "type", None) == "human"]
@@ -59,7 +60,7 @@ def supervisor_node(state: AgentState) -> dict:
         SystemMessage(content=SUPERVISOR_PROMPT + CONTINUATION_RULES),
         {"role": "user", "content": classifier_input},
     ])
-    content = response.content.strip()
+    content = response.text.strip()
     if content.startswith("```"):
         content = content.split("```")[1]
         if content.startswith("json"):

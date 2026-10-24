@@ -99,8 +99,15 @@ async def chat(req: ChatRequest):
     # Build the input state. `image_uploaded_this_turn` is reset on every request,
     # so only a request that actually carries a photo forces the Claims agent.
     # The photo itself stays in state until it is analysed, so a claim can span turns.
+    message_text = req.message.strip() or "I've uploaded a damage photo."
+    if req.damage_image_b64 and req.message.strip():
+        # Say so in the message itself: the model trusts what the customer says more
+        # than a note in its instructions. Without this, gpt-6-luna sometimes asked
+        # for a photo the customer had just sent.
+        message_text = f"{message_text} (Photo of the damage attached.)"
+
     input_state: dict = {
-        "messages": [HumanMessage(content=req.message or "I've uploaded a damage photo.")],
+        "messages": [HumanMessage(content=message_text)],
         "image_uploaded_this_turn": bool(req.damage_image_b64),
     }
     if req.damage_image_b64:
@@ -120,8 +127,8 @@ async def chat(req: ChatRequest):
     # The reply is the last AI message with text in THIS turn (not an earlier turn).
     reply_text = ""
     for message in reversed(current_turn_messages):
-        if isinstance(message, AIMessage) and message.content:
-            reply_text = message.content
+        if isinstance(message, AIMessage) and message.text:
+            reply_text = message.text
             break
 
     # Tool calls made in this turn only, so the UI trace matches the reply.

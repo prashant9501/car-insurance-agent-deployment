@@ -1,10 +1,10 @@
 # 🚗 Car Insurance AI Agent
 
-> A production-ready multi-agent car insurance assistant built with **LangGraph** supervisor pattern, **GPT-4o Vision** for damage analysis, **RAG** over IRDAI guidelines, and the actual math used by Indian motor insurers.
+> A production-ready multi-agent car insurance assistant built with **LangGraph** supervisor pattern, **GPT-6 Luna** (text + image) for damage analysis, **RAG** over IRDAI guidelines, and the actual math used by Indian motor insurers.
 
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](https://python.org)
-[![LangGraph](https://img.shields.io/badge/LangGraph-0.2-1C3C3C)](https://langchain-ai.github.io/langgraph/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![LangGraph](https://img.shields.io/badge/LangGraph-1.2-1C3C3C)](https://langchain-ai.github.io/langgraph/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.162-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
@@ -16,14 +16,23 @@ A chat assistant that handles three real insurance workflows end-to-end:
 | Workflow | Example | What happens |
 |---|---|---|
 | 📋 **Quote** | "Get me a quote for a 2-year-old Maruti Swift, 1 NCB" | Looks up vehicle specs → calculates IDV per IRDAI depreciation slab → returns 3 plans (TP / Comprehensive / Zero-Dep) with full premium breakdown |
-| 🛠️ **Claim** | Upload damage photo + "I had an accident" | GPT-4o Vision classifies damage severity → estimates repair cost → calculates payout (after depreciation + deductible) |
+| 🛠️ **Claim** | Upload damage photo + "I had an accident" | GPT-6 Luna looks at the photo, classifies damage severity → estimates repair cost → calculates payout (after depreciation + deductible) |
 | ❓ **Policy Q&A** | "What is the NCB ladder?" | RAG over IRDAI guidelines + policy terms → grounded, accurate answer |
+
+## 📓 Build it from scratch (Colab notebook)
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/prashant9501/car-insurance-agent-deployment/blob/main/notebooks/Building_a_Multi_Agent_Car_Insurance_AI_from_Scratch.ipynb)
+
+[`notebooks/Building_a_Multi_Agent_Car_Insurance_AI_from_Scratch.ipynb`](notebooks/Building_a_Multi_Agent_Car_Insurance_AI_from_Scratch.ipynb)
+builds the same system step by step — premium maths, tools, the vision tool, RAG, the supervisor and
+the LangGraph workflow — with an explanation after every cell. It needs only an OpenAI key stored in
+Colab Secrets as `OPENAI_API_KEY`, and runs end to end in under a minute of compute.
 
 ## 🏗️ Architecture
 
 ```
                     ┌──────────────────┐
-                    │   SUPERVISOR     │  ← Classifies intent (GPT-4o-mini)
+                    │   SUPERVISOR     │  ← Classifies intent
                     │   (router)       │
                     └────────┬─────────┘
                              │
@@ -32,7 +41,6 @@ A chat assistant that handles three real insurance workflows end-to-end:
    ┌─────────┐        ┌──────────┐        ┌──────────┐
    │  QUOTE  │        │  CLAIMS  │        │  POLICY  │
    │  AGENT  │        │  AGENT   │        │   Q&A    │
-   │ (4o)    │        │  (4o+v)  │        │ (4o-mini)│
    └────┬────┘        └─────┬────┘        └────┬─────┘
         │                   │                   │
         ▼                   ▼                   ▼
@@ -50,7 +58,7 @@ A chat assistant that handles three real insurance workflows end-to-end:
 ```
 
 **Why supervisor pattern?**
-- Fast classification (cheap model) → expensive reasoning only on the right agent
+- One cheap classification call → only the right agent's tools and prompt are used
 - Each agent has a focused tool set → fewer hallucinations
 - Easy to add new agents without touching existing ones
 
@@ -77,7 +85,7 @@ Sample quote for a 2-year-old Maruti Swift with 1 year NCB:
 | Layer | Technology |
 |---|---|
 | Orchestration | LangGraph (supervisor + checkpointing) |
-| LLMs | GPT-4o (reasoning + vision), GPT-4o-mini (routing + Q&A) |
+| LLM | `gpt-6-luna` for routing, all three agents and photo analysis (`reasoning_effort="none"`; set in `backend/app/llm.py` / `.env`) |
 | Embeddings | OpenAI `text-embedding-3-small` |
 | Vector DB | ChromaDB (persistent) |
 | Backend | FastAPI + Pydantic v2 |
@@ -106,6 +114,7 @@ car-insurance-agent/
 │   │   ├── services/
 │   │   │   ├── premium_calc.py     # IRDAI premium math
 │   │   │   └── vehicle_catalog.py  # Mock VAHAN database
+│   │   ├── llm.py                  # The chat model every agent uses (gpt-6-luna)
 │   │   └── main.py                 # FastAPI app
 │   ├── data/
 │   │   └── knowledge_base/         # IRDAI guidelines, policy terms, FAQs
@@ -113,9 +122,13 @@ car-insurance-agent/
 │   │   └── ingest_kb.py            # Load KB into ChromaDB
 │   ├── tests/
 │   │   ├── test_premium_calc.py
-│   │   └── test_claims_tools.py
+│   │   ├── test_claims_tools.py
+│   │   └── test_vehicle_catalog.py
+│   ├── pytest.ini
 │   ├── requirements.txt
 │   └── .env.example
+├── notebooks/
+│   └── Building_a_Multi_Agent_Car_Insurance_AI_from_Scratch.ipynb  # Colab lab
 ├── frontend/
 │   ├── index.html                  # Chat UI
 │   └── static/
@@ -240,20 +253,28 @@ sudo docker compose exec app python -m pytest tests/ -v
 | `LANGSMITH_TRACING` | optional | `false` | Enable tracing |
 | `CORS_ORIGINS` | optional | `*` | Comma-separated origins |
 | `CHROMA_PERSIST_DIR` | optional | `/app/chroma_db` | ChromaDB persistence path |
+| `OPENAI_CHAT_MODEL` | optional | `gpt-6-luna` | Chat model for every agent and the photo analysis |
+| `OPENAI_REASONING_EFFORT` | optional | `none` | Reasoning level for reasoning models; leave empty for other models |
+
+**Why gpt-6-luna?** OpenAI shuts down `gpt-4o` and `gpt-4o-mini` in the API on 14 Jan 2027 and lists
+`gpt-6-luna` as the replacement for both. It is a reasoning model, so it rejects `temperature`;
+`reasoning_effort="none"` keeps it about as fast as gpt-4o was.
 
 ## 💰 Cost Estimate
 
 Running the demo for a month with moderate use (~50 conversations/day):
-- OpenAI API: **~$3–8/month**
+- OpenAI API: **under $1/month** — gpt-6-luna costs $0.10 / $0.50 per 1M input / output tokens,
+  about 1/20th of gpt-4o
 - AWS t3.medium EC2: **~$30/month**
-- Total: **~$35/month**
+- Total: **~$31/month**
 
-Vision calls are the most expensive piece — about $0.005 per damage photo analysis.
+A damage-photo analysis measured about **$0.00016** with gpt-6-luna (767 input + ~170 output
+tokens), against $0.0038 for the same photo with gpt-4o.
 
 ## 🎓 What this demonstrates (capstone-level)
 
 ✅ **Hierarchical multi-agent** orchestration with LangGraph
-✅ **Multimodal AI** — GPT-4o Vision actually classifies real damage
+✅ **Multimodal AI** — the model actually looks at the photo and classifies real damage
 ✅ **RAG** with proper chunking, embeddings, and grounded responses
 ✅ **Tool calling** with Pydantic-validated schemas
 ✅ **Stateful conversations** via LangGraph checkpointing

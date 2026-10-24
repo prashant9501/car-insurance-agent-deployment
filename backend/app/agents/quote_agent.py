@@ -3,9 +3,9 @@
 Collects vehicle and driver details from the user, calls the quote tools
 (vehicle_lookup, calculate_premium, pincode_risk), and returns a 3-plan quote.
 """
-from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage
 
+from app.llm import get_chat_model
 from app.workflows.state import AgentState
 from app.tools.quote_tools import QUOTE_TOOLS
 
@@ -42,7 +42,7 @@ Currency is always INR (₹). Today is 2026.
 
 def quote_agent_node(state: AgentState) -> dict:
     """Quote agent — uses tools to compute and present a quote."""
-    llm = ChatOpenAI(model="gpt-4o", temperature=0).bind_tools(QUOTE_TOOLS)
+    llm = get_chat_model().bind_tools(QUOTE_TOOLS)
 
     messages = [SystemMessage(content=QUOTE_AGENT_PROMPT)] + state["messages"]
     response = llm.invoke(messages)
