@@ -83,6 +83,7 @@ CONTEXT RULES:
 - You may be told which flow is already in progress and the assistant's last message.
 - If the new message answers or continues that flow (a date, a place, a pincode, a policy
   number, a car model, yes/no, "the first plan"), keep the same intent.
+  Example: during a claim, "It happened yesterday near Lonavala" is claim.
 - If the new message asks something different, choose the intent that fits the new message,
   even if a claim or quote is in progress. Example: during a claim, "What is NCB?" is policy_qa.
 """
@@ -94,10 +95,12 @@ def build_classifier_input(state: AgentState, latest_user_message: str) -> str:
     if current_intent not in ("quote", "claim", "policy_qa"):
         return latest_user_message
 
+    # Keep the END of the last reply: agents put their follow-up question last
+    # (e.g. a claim summary that ends with "Could you share the date and place?").
     last_assistant_reply = ""
     for message in reversed(state["messages"]):
         if isinstance(message, AIMessage) and message.content:
-            last_assistant_reply = message.content[:600]
+            last_assistant_reply = message.content[-800:]
             break
 
     return (
