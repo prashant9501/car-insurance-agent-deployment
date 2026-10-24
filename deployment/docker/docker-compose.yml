@@ -1,3 +1,6 @@
+# Fixed project name, so the image/volume are car-insurance-agent-* (not docker-*)
+name: car-insurance-agent
+
 services:
   app:
     build:
@@ -5,8 +8,10 @@ services:
       dockerfile: Dockerfile
     container_name: car-insurance-agent
     env_file: ../../backend/.env
+    # Loopback only: the public reaches the app through NGINX on port 80.
+    # Publishing on 0.0.0.0 would bypass UFW (Docker writes its own iptables rules).
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - chroma_data:/app/chroma_db
     restart: unless-stopped

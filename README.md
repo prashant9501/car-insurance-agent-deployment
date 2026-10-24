@@ -112,7 +112,8 @@ car-insurance-agent/
 │   ├── scripts/
 │   │   └── ingest_kb.py            # Load KB into ChromaDB
 │   ├── tests/
-│   │   └── test_premium_calc.py
+│   │   ├── test_premium_calc.py
+│   │   └── test_claims_tools.py
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/
@@ -123,42 +124,54 @@ car-insurance-agent/
 ├── deployment/
 │   ├── docker/
 │   │   └── docker-compose.yml
-│   ├── nginx/
-│   │   └── nginx.conf
 │   └── systemd/
-│       └── setup_ec2.sh            # One-shot EC2 provisioning
+│       └── setup_ec2.sh            # One-shot EC2 provisioning (also writes the NGINX config)
 ├── Dockerfile
 ├── README.md
 └── LICENSE
 ```
 
-## 🚀 Quick Start
+## 🚀 Quick Start (local, with Docker)
 
 ### Prerequisites
-- Python 3.12+
-- Docker & Docker Compose
-- OpenAI API key (~$5–10 covers extensive testing)
+- Docker with Docker Compose
+- An OpenAI API key (~$5–10 covers extensive testing)
 
+```bash
+git clone https://github.com/k21academyuk/car-insurance-agent.git
+cd car-insurance-agent
+cp backend/.env.example backend/.env      # then put your key in OPENAI_API_KEY
+cd deployment/docker
+docker compose up --build
 ```
+
+Open `http://localhost:8000/`. The policy knowledge base is loaded into ChromaDB automatically the
+first time the app starts (look for `Knowledge base loaded: 19 chunks` in the logs).
 
 ## 🚢 Deploy to AWS EC2
 
-One-shot script provisions a fresh Ubuntu 26.04 EC2 with everything (Docker, NGINX, systemd):
+Tested on a **t3.medium** with **Ubuntu 24.04 LTS or 26.04 LTS**. Use a 20 GB gp3 root disk and a
+security group that allows SSH (22) from your IP and HTTP/HTTPS (80/443).
 
 ```bash
-# On the EC2 instance:
+# On the EC2 instance, as the ubuntu user:
+cd ~
 git clone https://github.com/k21academyuk/car-insurance-agent.git
 cd car-insurance-agent
-chmod +x deployment/systemd/setup_ec2.sh
-sudo bash deployment/systemd/setup_ec2.sh
+sudo bash deployment/systemd/setup_ec2.sh     # ~5 min; ends with "Deployment Complete"
 
-# Then add your OpenAI key and start
+# Add your OpenAI key, then start the service
 sudo nano backend/.env
 sudo systemctl start car-insurance-agent
-
 ```
 
-App is then live at `http://YOUR-EC2-IP/`.
+The app is then live at `http://YOUR-EC2-IP/` (API docs at `/docs`, health check at `/health`).
+The knowledge base loads automatically on first start; check with
+`cd deployment/docker && sudo docker compose logs app | grep "Knowledge base"`.
+
+The script installs Docker, NGINX (reverse proxy on port 80), certbot (for adding HTTPS later),
+UFW (22/80/443) and a systemd service that starts the app on boot. The container listens on
+`127.0.0.1:8000` only, so all public traffic goes through NGINX.
 
 ## 🎯 Demo Conversations
 
@@ -214,9 +227,8 @@ Bot:  [calls policy_kb_search]
 ## 🧪 Testing
 
 ```bash
-cd backend
-pytest tests/                    # unit tests
-pytest tests/ -v --tb=short      # verbose
+# Inside the running container (from deployment/docker):
+sudo docker compose exec app python -m pytest tests/ -v
 ```
 
 ## 🔐 Configuration

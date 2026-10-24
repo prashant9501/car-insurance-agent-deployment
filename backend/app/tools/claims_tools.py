@@ -4,6 +4,9 @@ Includes the showcase tool: GPT-4o Vision-based damage analysis.
 """
 import base64
 import json
+import secrets
+from datetime import date
+
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
@@ -115,6 +118,16 @@ Cost guidance:
         return {"error": f"Vision analysis failed: {type(e).__name__}: {e}"}
 
 
+# Payouts above this need a human surveyor visit before approval
+SURVEYOR_THRESHOLD_INR = 50_000
+
+
+def generate_claim_id() -> str:
+    """Return a new claim reference in the format CLM-YYYY-NNNNN (demo: not stored)."""
+    five_digit_number = 10_000 + secrets.randbelow(90_000)
+    return f"CLM-{date.today().year}-{five_digit_number}"
+
+
 class PayoutInput(BaseModel):
     estimated_repair_cost_inr: int = Field(description="Repair cost estimate from damage analysis")
     policy_idv: int = Field(description="Policy IDV (sum insured)")
@@ -150,6 +163,8 @@ def estimate_payout_tool(
     is_total_loss = estimated_repair_cost_inr > (policy_idv * 0.75)
 
     return {
+        "claim_id": generate_claim_id(),
+        "surveyor_visit_required": payout > SURVEYOR_THRESHOLD_INR,
         "estimated_repair_cost_inr": estimated_repair_cost_inr,
         "depreciation_deduction_inr": depreciation_deduction,
         "deductible_inr": deductible_inr,

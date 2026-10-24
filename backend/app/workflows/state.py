@@ -22,5 +22,10 @@ class AgentState(TypedDict):
     quote_result: Optional[dict]
     claim_result: Optional[dict]
 
-    # Damage photo for claim flow (base64 string)
+    # Damage photo for claim flow (base64 string). Cleared once it has been analysed.
     damage_image_b64: Optional[str]
+
+    # True only for the request that carried a new photo; reset on every request.
+    # The supervisor uses this (not damage_image_b64) to force the Claims agent,
+    # so a photo from an earlier turn cannot trap the user in the claims flow.
+    image_uploaded_this_turn: Optional[bool]

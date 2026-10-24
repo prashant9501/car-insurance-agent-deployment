@@ -7,9 +7,31 @@ const fileInput = document.getElementById('fileInput');
 const uploadBtn = document.getElementById('uploadBtn');
 const imagePreview = document.getElementById('imagePreview');
 const agentIndicator = document.getElementById('agentIndicator');
+const newChatButton = document.getElementById('newChatBtn');
+
+// Keep the welcome message so "New chat" can restore it
+const welcomeMarkup = chatWindow.innerHTML;
 
 let sessionId = localStorage.getItem('ci_session_id') || null;
 let pendingImage = null;
+
+// ─── New chat ───────────────────────────────────────────────────────────────
+// Starts a fresh conversation: forgets the session on the server and in the browser.
+newChatButton.addEventListener('click', async () => {
+  if (sessionId) {
+    try {
+      await fetch(`/api/reset?session_id=${encodeURIComponent(sessionId)}`, { method: 'POST' });
+    } catch (resetError) {
+      console.warn('Reset request failed; starting a new session anyway', resetError);
+    }
+  }
+  sessionId = null;
+  localStorage.removeItem('ci_session_id');
+  clearImage();
+  chatWindow.innerHTML = welcomeMarkup;
+  updateAgentIndicator(null);
+  messageInput.focus();
+});
 
 // ─── Suggestions ────────────────────────────────────────────────────────────
 document.querySelectorAll('.suggestion').forEach(btn => {
@@ -114,7 +136,14 @@ function addMessage(text, role, toolCalls = []) {
 
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
-  bubble.textContent = text;
+  if (role === 'bot' && canRenderMarkdown()) {
+    // Agent replies are Markdown (bold, lists, headings). Render it, then sanitise
+    // the HTML so nothing in a reply can run as script.
+    bubble.classList.add('markdown');
+    bubble.innerHTML = DOMPurify.sanitize(marked.parse(text));
+  } else {
+    bubble.textContent = text;
+  }
   msg.appendChild(bubble);
 
   if (toolCalls && toolCalls.length > 0) {
@@ -128,6 +157,11 @@ function addMessage(text, role, toolCalls = []) {
   chatWindow.appendChild(msg);
   chatWindow.scrollTop = chatWindow.scrollHeight;
   return msg;
+}
+
+// True when both Markdown libraries loaded from the CDN; otherwise show plain text.
+function canRenderMarkdown() {
+  return typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined';
 }
 
 function addTypingIndicator() {

@@ -64,6 +64,26 @@ body {
   margin: 0;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.new-chat-btn {
+  background: transparent;
+  color: white;
+  border: 1px solid rgba(255,255,255,0.4);
+  border-radius: 20px;
+  padding: 6px 14px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.new-chat-btn:hover {
+  background: rgba(255,255,255,0.15);
+}
+
 .agent-indicator {
   display: flex;
   align-items: center;
@@ -101,6 +121,7 @@ body {
 
 .message {
   display: flex;
+  flex-direction: column;   /* tool trace sits under the bubble, not beside it */
   max-width: 85%;
   animation: slideIn 0.25s ease-out;
 }
@@ -142,6 +163,21 @@ body {
 .bubble ul {
   margin: 8px 0 0 20px;
 }
+
+/* Rendered Markdown replies: normal whitespace, compact spacing */
+.bubble.markdown { white-space: normal; }
+.bubble.markdown p,
+.bubble.markdown ul,
+.bubble.markdown ol { margin: 6px 0; }
+.bubble.markdown ul,
+.bubble.markdown ol { padding-left: 20px; }
+.bubble.markdown h1,
+.bubble.markdown h2,
+.bubble.markdown h3,
+.bubble.markdown h4 { font-size: 15px; margin: 10px 0 4px; }
+.bubble.markdown > :first-child { margin-top: 0; }
+.bubble.markdown > :last-child { margin-bottom: 0; }
+.message.user { align-items: flex-end; }
 
 .bubble li {
   margin: 4px 0;
