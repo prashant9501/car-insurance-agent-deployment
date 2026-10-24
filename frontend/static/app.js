@@ -17,20 +17,22 @@ let pendingImage = null;
 
 // ─── New chat ───────────────────────────────────────────────────────────────
 // Starts a fresh conversation: forgets the session on the server and in the browser.
-newChatButton.addEventListener('click', async () => {
-  if (sessionId) {
-    try {
-      await fetch(`/api/reset?session_id=${encodeURIComponent(sessionId)}`, { method: 'POST' });
-    } catch (resetError) {
-      console.warn('Reset request failed; starting a new session anyway', resetError);
-    }
-  }
+newChatButton.addEventListener('click', () => {
+  const previousSessionId = sessionId;
+
+  // Reset the page first, so a photo attached right after clicking is never wiped
   sessionId = null;
   localStorage.removeItem('ci_session_id');
   clearImage();
   chatWindow.innerHTML = welcomeMarkup;
   updateAgentIndicator(null);
   messageInput.focus();
+
+  // Then tell the server to forget the old conversation (no need to wait for it)
+  if (previousSessionId) {
+    fetch(`/api/reset?session_id=${encodeURIComponent(previousSessionId)}`, { method: 'POST' })
+      .catch(resetError => console.warn('Reset request failed; the new chat still works', resetError));
+  }
 });
 
 // ─── Suggestions ────────────────────────────────────────────────────────────
