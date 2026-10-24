@@ -2,15 +2,17 @@
 import logging
 import os
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
+from langchain_core.messages import HumanMessage, AIMessage
 from pydantic import BaseModel
 
+from app.tools.rag_tools import ensure_knowledge_base_loaded
 from app.workflows.main_graph import get_graph
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -18,10 +20,25 @@ log = logging.getLogger("car-insurance-agent")
 
 
 # ─── App setup ────────────────────────────────────────────────────────────────
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    """Load the policy knowledge base into ChromaDB when the app starts.
+
+    Ingestion only runs when the collection is empty, so restarts are fast.
+    A missing or invalid OpenAI key is logged, not fatal: the app still starts,
+    and the knowledge base is loaded on the first policy question instead.
+    """
+    chunk_count = ensure_knowledge_base_loaded()
+    if chunk_count:
+        log.info(f"Knowledge base ready: {chunk_count} chunks")
+    yield
+
+
 app = FastAPI(
     title="Car Insurance AI",
     description="Multi-agent car insurance assistant powered by LangGraph",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 cors_origins = os.getenv("CORS_ORIGINS", "*").split(",")
@@ -79,9 +96,12 @@ async def chat(req: ChatRequest):
 
     graph = get_graph()
 
-    # Build the input state
+    # Build the input state. `image_uploaded_this_turn` is reset on every request,
+    # so only a request that actually carries a photo forces the Claims agent.
+    # The photo itself stays in state until it is analysed, so a claim can span turns.
     input_state: dict = {
         "messages": [HumanMessage(content=req.message or "I've uploaded a damage photo.")],
+        "image_uploaded_this_turn": bool(req.damage_image_b64),
     }
     if req.damage_image_b64:
         input_state["damage_image_b64"] = req.damage_image_b64
@@ -91,23 +111,25 @@ async def chat(req: ChatRequest):
 
     try:
         result = await graph.ainvoke(input_state, config=config)
-    except Exception as e:
+    except Exception as error:
         log.exception("Graph invocation failed")
-        raise HTTPException(500, f"Agent error: {type(e).__name__}: {e}")
+        raise HTTPException(500, f"Agent error: {type(error).__name__}: {error}")
 
-    # Extract the final AI response (last AIMessage with content)
+    current_turn_messages = get_current_turn_messages(result["messages"])
+
+    # The reply is the last AI message with text in THIS turn (not an earlier turn).
     reply_text = ""
-    for msg in reversed(result["messages"]):
-        if isinstance(msg, AIMessage) and msg.content:
-            reply_text = msg.content
+    for message in reversed(current_turn_messages):
+        if isinstance(message, AIMessage) and message.content:
+            reply_text = message.content
             break
 
-    # Collect tool calls for the UI
+    # Tool calls made in this turn only, so the UI trace matches the reply.
     tool_calls_summary = []
-    for msg in result["messages"]:
-        if isinstance(msg, AIMessage) and msg.tool_calls:
-            for tc in msg.tool_calls:
-                tool_calls_summary.append({"name": tc["name"], "args": tc["args"]})
+    for message in current_turn_messages:
+        if isinstance(message, AIMessage) and message.tool_calls:
+            for tool_call in message.tool_calls:
+                tool_calls_summary.append({"name": tool_call["name"], "args": tool_call["args"]})
 
     return ChatResponse(
         session_id=session_id,
@@ -117,7 +139,24 @@ async def chat(req: ChatRequest):
     )
 
 
+def get_current_turn_messages(messages: list) -> list:
+    """Return the messages produced since the latest user message.
+
+    The checkpointer returns the whole conversation, so without this the UI
+    would show replies and tool calls from earlier turns.
+    """
+    for position in range(len(messages) - 1, -1, -1):
+        if isinstance(messages[position], HumanMessage):
+            return messages[position + 1:]
+    return messages
+
+
 @app.post("/api/reset")
 async def reset_session(session_id: str):
-    """Clear a session (frontend convenience)."""
-    return {"session_id": session_id, "status": "reset"}
+    """Forget a conversation so the next message starts a fresh session."""
+    checkpointer = get_graph().checkpointer
+    cleared = False
+    if hasattr(checkpointer, "delete_thread"):
+        checkpointer.delete_thread(session_id)
+        cleared = True
+    return {"session_id": session_id, "status": "reset", "cleared": cleared}

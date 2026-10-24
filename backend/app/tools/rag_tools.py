@@ -1,4 +1,5 @@
 """RAG tool — searches the policy/IRDAI knowledge base in ChromaDB."""
+import logging
 import os
 from pathlib import Path
 
@@ -8,6 +9,11 @@ from pydantic import BaseModel, Field
 import chromadb
 from chromadb.config import Settings
 
+
+log = logging.getLogger("car-insurance-agent")
+
+# Markdown/text files shipped with the app: backend/data/knowledge_base (/app/data/... in Docker)
+KNOWLEDGE_BASE_DIR = Path(__file__).parent.parent.parent / "data" / "knowledge_base"
 
 # Lazy-init the Chroma client once
 _chroma_client = None
@@ -84,6 +90,30 @@ def ingest_documents(docs_dir: str) -> int:
     return len(chunks_to_add)
 
 
+def ensure_knowledge_base_loaded() -> int:
+    """Ingest the bundled knowledge base if ChromaDB is still empty.
+
+    Called at app startup and again before a search, so learners never have to
+    run scripts/ingest_kb.py by hand. Failures (usually a missing or invalid
+    OPENAI_API_KEY) are logged and reported as 0 chunks instead of crashing.
+
+    Returns:
+        The number of chunks in the collection after the check.
+    """
+    try:
+        collection = _get_collection()
+        if collection.count() > 0:
+            return collection.count()
+        log.info(f"Knowledge base is empty — ingesting files from {KNOWLEDGE_BASE_DIR}")
+        chunk_count = ingest_documents(str(KNOWLEDGE_BASE_DIR))
+        log.info(f"Knowledge base loaded: {chunk_count} chunks")
+        return chunk_count
+    except Exception as error:
+        log.warning(f"Could not load the knowledge base yet ({type(error).__name__}: {error}). "
+                    "Check OPENAI_API_KEY in backend/.env, then restart the service.")
+        return 0
+
+
 class KBSearchInput(BaseModel):
     query: str = Field(description="Question or topic to search the policy knowledge base for")
     top_k: int = Field(default=4, description="Number of relevant chunks to retrieve")
@@ -96,14 +126,17 @@ def policy_kb_search_tool(query: str, top_k: int = 4) -> dict:
     Use this for any policy-related question: coverage, exclusions, NCB rules,
     claim process, IRDAI guidelines, etc.
     """
-    collection = _get_collection()
-    embeddings = _embeddings
-
-    if collection.count() == 0:
+    # Load the knowledge base on first use if startup could not (e.g. key added later)
+    if ensure_knowledge_base_loaded() == 0:
         return {
             "results": [],
-            "note": "Knowledge base is empty. Run scripts/ingest_kb.py first.",
+            "knowledge_base_empty": True,
+            "note": "The policy knowledge base is not loaded, so no documents could be searched. "
+                    "Tell the customer this answer is general guidance, not from policy documents.",
         }
+
+    collection = _get_collection()
+    embeddings = _embeddings
 
     query_vec = embeddings.embed_query(query)
     results = collection.query(query_embeddings=[query_vec], n_results=top_k)

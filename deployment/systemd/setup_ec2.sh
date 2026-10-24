@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 ###############################################################################
-# Car Insurance Agent — EC2 Setup (Ubuntu 26.04)
+# Car Insurance Agent — EC2 Setup (Ubuntu 24.04 / 26.04 LTS)
 #
-# Provisions a fresh Ubuntu 26.04 EC2 instance with:
+# Provisions a fresh Ubuntu 24.04 or 26.04 EC2 instance with:
 #   - System updates + Docker + Docker Compose
-#   - Python 3.13 (system default)
 #   - .env scaffolding (auto-generated, public IP detection)
 #   - UFW firewall (22/80/443)
-#   - NGINX reverse proxy
+#   - NGINX reverse proxy + certbot (for adding HTTPS later)
 #   - Systemd service for boot persistence
+# The app itself runs on Python 3.12 inside Docker; the host Python is not used.
+# The policy knowledge base is loaded automatically the first time the app starts.
 #
 # PREREQUISITE: Clone the repo BEFORE running this script:
 #   cd ~
@@ -32,15 +33,17 @@ warn()    { echo -e "${YELLOW}[!]${NC} $1"; }
 error()   { echo -e "${RED}[✗]${NC} $1" >&2; exit 1; }
 
 # ─── Configuration ───────────────────────────────────────────────────────────
-APP_USER="ubuntu"
-APP_HOME="/home/${APP_USER}"
-APP_DIR="${APP_HOME}/car-insurance-agent"
+# The user who ran `sudo` owns the app (ubuntu on EC2).
+APP_USER="${SUDO_USER:-ubuntu}"
+# The repo root is two levels above this script, whatever the clone folder is called
+# (car-insurance-agent, a fork such as car-insurance-agent-deployment, ...).
+APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 APP_PORT=8000
 
 # ─── 0. Pre-flight ───────────────────────────────────────────────────────────
 echo ""
 echo "================================================================"
-echo "       Car Insurance Agent — EC2 Setup (Ubuntu 26.04)"
+echo "    Car Insurance Agent — EC2 Setup (Ubuntu 24.04 / 26.04 LTS)"
 echo "================================================================"
 echo ""
 
@@ -49,8 +52,8 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 log "Checking application directory: ${APP_DIR}"
-if [[ ! -d "${APP_DIR}" ]]; then
-    error "Application directory not found at ${APP_DIR}.
+if [[ ! -f "${APP_DIR}/backend/requirements.txt" || ! -f "${APP_DIR}/deployment/docker/docker-compose.yml" ]]; then
+    error "This script must be run from inside a clone of the project (looked in ${APP_DIR}).
        Please clone the repository first:
            cd ~
            git clone https://github.com/k21academyuk/car-insurance-agent.git
@@ -157,8 +160,8 @@ ufw --force enable >/dev/null 2>&1
 success "UFW: 22/80/443 open"
 
 # ─── 5. NGINX ────────────────────────────────────────────────────────────────
-log "Step 5/8 — NGINX reverse proxy..."
-apt-get install -y -qq nginx
+log "Step 5/8 — NGINX reverse proxy (+ certbot for HTTPS later)..."
+apt-get install -y -qq nginx certbot python3-certbot-nginx
 rm -f /etc/nginx/sites-enabled/default
 
 cat > /etc/nginx/sites-available/car-insurance-agent <<NGINX_EOF
@@ -245,7 +248,7 @@ success "Service enabled"
 log "Step 8/8 — Setup complete!"
 echo ""
 echo "================================================================"
-echo -e "${GREEN}✅ Car Insurance Agent ready to launch!${NC}"
+echo -e "${GREEN}✅ Deployment Complete — Car Insurance Agent ready to launch!${NC}"
 echo "================================================================"
 echo ""
 echo -e "${YELLOW}NEXT STEPS:${NC}"
@@ -253,12 +256,14 @@ echo ""
 echo -e "${BLUE}1.${NC} Add your OpenAI API key:"
 echo "      sudo nano ${ENV_FILE}"
 echo ""
-echo -e "${BLUE}2.${NC} Start the service:"
+echo -e "${BLUE}2.${NC} Start the service (the knowledge base loads automatically on first start):"
 echo "      sudo systemctl start car-insurance-agent"
 echo ""
-echo -e "${BLUE}3.${NC} Wait ~30 seconds, then ingest the knowledge base:"
+echo -e "${BLUE}3.${NC} After ~30 seconds, confirm the knowledge base loaded:"
 echo "      cd ${APP_DIR}/deployment/docker"
-echo "      docker compose exec app python scripts/ingest_kb.py"
+echo "      sudo docker compose logs app | grep 'Knowledge base'"
+echo "      (To reload it after editing backend/data/knowledge_base:"
+echo "       sudo docker compose exec app python scripts/ingest_kb.py)"
 echo ""
 
 # Re-fetch public IP
@@ -279,9 +284,12 @@ echo ""
 echo -e "${YELLOW}USEFUL COMMANDS:${NC}"
 echo "      Status:    sudo systemctl status car-insurance-agent"
 echo "      Logs:      sudo journalctl -u car-insurance-agent -f"
-echo "      App logs:  cd ${APP_DIR}/deployment/docker && docker compose logs -f"
+echo "      App logs:  cd ${APP_DIR}/deployment/docker && sudo docker compose logs -f"
 echo "      Restart:   sudo systemctl restart car-insurance-agent"
 echo "      Update:    cd ${APP_DIR} && git pull && cd deployment/docker && \\"
-echo "                 docker compose build && sudo systemctl restart car-insurance-agent"
+echo "                 sudo docker compose build && sudo systemctl restart car-insurance-agent"
+echo ""
+echo "      (docker commands need sudo until you log out and back in — the docker"
+echo "       group added by this script only applies to new SSH sessions.)"
 echo ""
 echo "================================================================"

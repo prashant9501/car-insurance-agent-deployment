@@ -46,28 +46,18 @@ def supervisor_node(state: AgentState) -> dict:
 
     latest_user_msg = user_messages[-1].content
 
-    # If a damage image is attached, this is unambiguously a claim
-    if state.get("damage_image_b64"):
+    # A photo uploaded with THIS message is unambiguously a claim.
+    # (A photo from an earlier turn must not force every later message into claims.)
+    if state.get("image_uploaded_this_turn"):
         return {"intent": "claim", "next_agent": "claims"}
 
-    # If we already have an intent and the user is continuing the same flow,
-    # keep them in the same agent (preserves multi-turn coherence)
-    current_intent = state.get("intent")
-    if current_intent in ("quote", "claim", "policy_qa"):
-        # Check if this looks like a topic switch
-        switch_keywords = {
-            "quote": ["claim", "accident", "damage", "what is", "what's covered"],
-            "claim": ["quote", "premium", "how much", "price"],
-            "policy_qa": ["quote", "claim", "premium for"],
-        }
-        msg_lower = latest_user_msg.lower()
-        if not any(k in msg_lower for k in switch_keywords.get(current_intent, [])):
-            return {"intent": current_intent, "next_agent": _intent_to_agent(current_intent)}
-
-    # Classify
+    # Always classify, but tell the classifier which flow is in progress and what the
+    # agent last asked, so short answers ("yesterday, near Lonavala") stay in that flow
+    # while a new question ("What is NCB?") switches to the right agent.
+    classifier_input = build_classifier_input(state, latest_user_msg)
     response = llm.invoke([
-        SystemMessage(content=SUPERVISOR_PROMPT),
-        {"role": "user", "content": latest_user_msg},
+        SystemMessage(content=SUPERVISOR_PROMPT + CONTINUATION_RULES),
+        {"role": "user", "content": classifier_input},
     ])
     content = response.content.strip()
     if content.startswith("```"):
@@ -82,10 +72,57 @@ def supervisor_node(state: AgentState) -> dict:
     except json.JSONDecodeError:
         intent = "policy_qa"
 
+    # The prompt names the agents "quote / claims / policy_qa" but asks for the intents
+    # "quote / claim / policy_qa", and the model sometimes answers with the agent name.
+    # Accept both spellings instead of silently falling back to policy_qa.
+    intent = INTENT_ALIASES.get(str(intent).strip().lower(), intent)
     if intent not in ("quote", "claim", "policy_qa"):
         intent = "policy_qa"
 
     return {"intent": intent, "next_agent": _intent_to_agent(intent)}
+
+
+# Spellings the classifier may return, mapped to the intent names the graph uses
+INTENT_ALIASES = {
+    "claims": "claim",
+    "claim": "claim",
+    "quotes": "quote",
+    "quote": "quote",
+    "policy": "policy_qa",
+    "policy_qa": "policy_qa",
+}
+
+
+CONTINUATION_RULES = """
+CONTEXT RULES:
+- You may be told which flow is already in progress and the assistant's last message.
+- If the new message answers or continues that flow (a date, a place, a pincode, a policy
+  number, a car model, yes/no, "the first plan"), keep the same intent.
+  Example: during a claim, "It happened yesterday near Lonavala" is claim.
+- If the new message asks something different, choose the intent that fits the new message,
+  even if a claim or quote is in progress. Example: during a claim, "What is NCB?" is policy_qa.
+"""
+
+
+def build_classifier_input(state: AgentState, latest_user_message: str) -> str:
+    """Build the text the intent classifier sees: current flow, last reply, new message."""
+    current_intent = state.get("intent")
+    if current_intent not in ("quote", "claim", "policy_qa"):
+        return latest_user_message
+
+    # Keep the END of the last reply: agents put their follow-up question last
+    # (e.g. a claim summary that ends with "Could you share the date and place?").
+    last_assistant_reply = ""
+    for message in reversed(state["messages"]):
+        if isinstance(message, AIMessage) and message.content:
+            last_assistant_reply = message.content[-800:]
+            break
+
+    return (
+        f"Flow in progress: {current_intent}\n"
+        f"Assistant's last message: {last_assistant_reply or '(none)'}\n"
+        f"New user message: {latest_user_message}"
+    )
 
 
 def _intent_to_agent(intent: str) -> str:

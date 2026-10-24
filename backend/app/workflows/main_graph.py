@@ -43,6 +43,7 @@ def tool_executor_node(state: AgentState) -> dict:
         return {}
 
     tool_messages = []
+    image_was_analysed = False
     for tool_call in last_msg.tool_calls:
         name = tool_call["name"]
         args = dict(tool_call["args"])
@@ -74,14 +75,21 @@ def tool_executor_node(state: AgentState) -> dict:
                 tool_call_id=tool_call["id"],
                 name=name,
             ))
-        except Exception as e:
+            if name == "analyze_damage_image" and "error" not in result:
+                image_was_analysed = True
+        except Exception as error:
             tool_messages.append(ToolMessage(
-                content=json.dumps({"error": f"{type(e).__name__}: {e}"}),
+                content=json.dumps({"error": f"{type(error).__name__}: {error}"}),
                 tool_call_id=tool_call["id"],
                 name=name,
             ))
 
-    return {"messages": tool_messages}
+    state_update = {"messages": tool_messages}
+    # Drop the photo once it has been analysed: the result is in the conversation,
+    # and the Claims agent should not be told to analyse it again on later turns.
+    if image_was_analysed:
+        state_update["damage_image_b64"] = None
+    return state_update
 
 
 def should_use_tools(state: AgentState) -> str:

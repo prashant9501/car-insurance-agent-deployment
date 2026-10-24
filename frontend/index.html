@@ -16,15 +16,18 @@
           <p class="tagline">Multi-Agent Car Insurance Assistant</p>
         </div>
       </div>
-      <div class="agent-indicator" id="agentIndicator">
-        <span class="agent-dot"></span>
-        <span class="agent-name">Routing…</span>
+      <div class="header-actions">
+        <div class="agent-indicator" id="agentIndicator">
+          <span class="agent-dot"></span>
+          <span class="agent-name">Routing…</span>
+        </div>
+        <button type="button" class="new-chat-btn" id="newChatBtn" title="Start a new conversation">New chat</button>
       </div>
     </header>
 
     <main class="chat-window" id="chatWindow">
       <div class="message bot">
-        <div class="bubble">
+        <div class="bubble markdown">
           👋 Hi! I'm AutoShield AI. I can help you with:
           <ul>
             <li>📋 Get a <strong>quote</strong> for your car</li>
@@ -58,6 +61,10 @@
     </div>
   </div>
 
+  <!-- Markdown rendering for agent replies (sanitised with DOMPurify). If these fail
+       to load, app.js falls back to plain text. -->
+  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>

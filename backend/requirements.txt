@@ -14,6 +14,8 @@ langgraph==0.2.50
 # ─── LLM / Embeddings / Vector DB ────────────────────
 openai==1.54.4
 chromadb==0.5.18
+# chromadb 0.5.x calls the PostHog 5.x API; PostHog 6+ prints "Failed to send telemetry event"
+posthog>=2.4.0,<6.0.0
 tiktoken==0.8.0
 
 # ─── HTTP ────────────────────────────────────────────
