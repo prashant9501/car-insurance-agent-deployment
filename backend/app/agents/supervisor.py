@@ -72,10 +72,25 @@ def supervisor_node(state: AgentState) -> dict:
     except json.JSONDecodeError:
         intent = "policy_qa"
 
+    # The prompt names the agents "quote / claims / policy_qa" but asks for the intents
+    # "quote / claim / policy_qa", and the model sometimes answers with the agent name.
+    # Accept both spellings instead of silently falling back to policy_qa.
+    intent = INTENT_ALIASES.get(str(intent).strip().lower(), intent)
     if intent not in ("quote", "claim", "policy_qa"):
         intent = "policy_qa"
 
     return {"intent": intent, "next_agent": _intent_to_agent(intent)}
+
+
+# Spellings the classifier may return, mapped to the intent names the graph uses
+INTENT_ALIASES = {
+    "claims": "claim",
+    "claim": "claim",
+    "quotes": "quote",
+    "quote": "quote",
+    "policy": "policy_qa",
+    "policy_qa": "policy_qa",
+}
 
 
 CONTINUATION_RULES = """
