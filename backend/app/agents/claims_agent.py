@@ -2,9 +2,9 @@
 
 Uses vision-based damage analysis as its showcase capability.
 """
-from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 
+from app.llm import get_chat_model
 from app.workflows.state import AgentState
 from app.tools.claims_tools import CLAIMS_TOOLS
 
@@ -52,7 +52,7 @@ def claims_agent_node(state: AgentState) -> dict:
     """Claims agent — vision + payout estimation."""
     # parallel_tool_calls=False: one tool per step, so estimate_payout can only run
     # after the vision result is back (in parallel it was called with a guessed cost).
-    llm = ChatOpenAI(model="gpt-4o", temperature=0).bind_tools(
+    llm = get_chat_model().bind_tools(
         CLAIMS_TOOLS, parallel_tool_calls=False
     )
 

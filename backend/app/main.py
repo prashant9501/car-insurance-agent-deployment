@@ -120,8 +120,8 @@ async def chat(req: ChatRequest):
     # The reply is the last AI message with text in THIS turn (not an earlier turn).
     reply_text = ""
     for message in reversed(current_turn_messages):
-        if isinstance(message, AIMessage) and message.content:
-            reply_text = message.content
+        if isinstance(message, AIMessage) and message.text:
+            reply_text = message.text
             break
 
     # Tool calls made in this turn only, so the UI trace matches the reply.
